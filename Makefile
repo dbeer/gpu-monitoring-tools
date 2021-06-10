@@ -18,7 +18,7 @@ REGISTRY ?= nvidia
 
 DCGM_VERSION   := 2.1.8
 GOLANG_VERSION := 1.14.2
-VERSION        := 2.4.0-rc.2
+VERSION        := 2.4.0-rc.3
 FULL_VERSION   := $(DCGM_VERSION)-$(VERSION)
 
 NON_TEST_FILES  := pkg/dcgm.go pkg/gpu_collector.go pkg/parser.go pkg/pipeline.go pkg/server.go pkg/system_info.go pkg/types.go pkg/utils.go pkg/kubernetes.go pkg/main.go
@@ -29,6 +29,9 @@ all: ubuntu18.04 ubuntu20.04 ubi8
 
 binary:
 	cd pkg; go build
+
+test-main: $(NON_TEST_FILES) $(MAIN_TEST_FILES)
+	cd pkg; go test
 
 install: binary
 	install -m 557 pkg/dcgm-exporter /usr/bin/dcgm-exporter
@@ -54,9 +57,6 @@ push-ci:
 push-latest:
 	$(DOCKER) tag "$(REGISTRY)/dcgm-exporter:$(FULL_VERSION)-ubuntu18.04" "$(REGISTRY)/dcgm-exporter:latest"
 	$(DOCKER) push "$(REGISTRY)/dcgm-exporter:latest"
-
-test-main: $(NON_TEST_FILES) $(MAIN_TEST_FILES)
-	 go test pkg/system_info_test.go pkg/system_info.go pkg/types.go
 
 ubuntu20.04:
 	$(DOCKER) build --pull \

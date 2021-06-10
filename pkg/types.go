@@ -29,7 +29,9 @@ var (
 	SkipDCGMValue   = "SKIPPING DCGM VALUE"
 	FailedToConvert = "ERROR - FAILED TO CONVERT TO STRING"
 
-	nvidiaResourceName = "nvidia.com/gpu"
+	nvidiaResourceName      = "nvidia.com/gpu"
+	nvidiaMigResourcePrefix = "nvidia.com/mig-"
+	MIG_UUID_PREFIX         = "MIG-"
 
 	// Note standard resource attributes
 	podAttribute       = "pod"
@@ -72,10 +74,11 @@ type Config struct {
 	RemoteHEInfo        string
 	Devices             DeviceOptions
 	NoHostname          bool
+	UseFakeGpus         bool
 }
 
 type Transform interface {
-	Process(metrics [][]Metric) error
+	Process(metrics [][]Metric, sysInfo SystemInfo) error
 	Name() string
 }
 
@@ -124,13 +127,17 @@ type Metric struct {
 }
 
 func (m Metric) getIDOfType(idType KubernetesGPUIDType) (string, error) {
+	// For MIG devices, return the MIG profile instead of
+	if m.MigProfile != "" {
+		return fmt.Sprintf("%s-%s", m.GPU, m.GPUInstanceID), nil
+	}
 	switch idType {
 	case GPUUID:
 		return m.GPUUUID, nil
 	case DeviceName:
 		return m.GPUDevice, nil
 	}
-	return "", fmt.Errorf("unsupported KubernetesGPUIDType for MetricID %s", idType)
+	return "", fmt.Errorf("unsupported KubernetesGPUIDType for MetricID '%s'", idType)
 }
 
 var promMetricType = map[string]bool{

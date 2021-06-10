@@ -22,14 +22,14 @@ import (
 	"os"
 )
 
-func NewDCGMCollector(c []Counter, useOldNamespace bool, dOpt DeviceOptions, noHostname bool) (*DCGMCollector, func(), error) {
-	sysInfo, err := InitializeSystemInfo(dOpt)
+func NewDCGMCollector(c []Counter, config *Config) (*DCGMCollector, func(), error) {
+	sysInfo, err := InitializeSystemInfo(config.Devices, config.UseFakeGpus)
 	if err != nil {
 		return nil, func() {}, err
 	}
 
 	hostname := ""
-	if noHostname == false {
+	if config.NoHostname == false {
 		hostname, err = os.Hostname()
 		if err != nil {
 			return nil, func() {}, err
@@ -39,7 +39,7 @@ func NewDCGMCollector(c []Counter, useOldNamespace bool, dOpt DeviceOptions, noH
 	collector := &DCGMCollector{
 		Counters:        c,
 		DeviceFields:    NewDeviceFields(c),
-		UseOldNamespace: useOldNamespace,
+		UseOldNamespace: config.UseOldNamespace,
 		SysInfo:         sysInfo,
 		Hostname:        hostname,
 	}
@@ -79,26 +79,13 @@ func (c *DCGMCollector) GetMetrics() ([][]Metric, error) {
 	return metrics, nil
 }
 
-func ShouldIgnoreValue(fieldId dcgm.Short, isGpu bool) bool {
-	fieldMeta := dcgm.FieldGetById(fieldId)
-	if isGpu {
-		return false
-	} else {
-		if fieldMeta.EntityLevel == dcgm.FE_GPU_I || fieldMeta.EntityLevel == dcgm.FE_GPU_CI {
-			return false
-		}
-	}
-
-	return true
-}
-
 func ToMetric(values []dcgm.FieldValue_v1, c []Counter, d dcgm.Device, instanceInfo *GpuInstanceInfo, useOld bool, hostname string) []Metric {
 	var metrics []Metric
 
 	for i, val := range values {
 		v := ToString(val)
 		// Filter out counters with no value and ignored fields for this entity
-		if v == SkipDCGMValue || ShouldIgnoreValue(dcgm.Short(val.FieldId), instanceInfo == nil) {
+		if v == SkipDCGMValue {
 			continue
 		}
 		uuid := "UUID"

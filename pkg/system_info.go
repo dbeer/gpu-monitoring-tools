@@ -147,7 +147,7 @@ func VerifyDevicePresence(sysInfo *SystemInfo, dOpt DeviceOptions) error {
 	return nil
 }
 
-func InitializeSystemInfo(dOpt DeviceOptions) (SystemInfo, error) {
+func InitializeSystemInfo(dOpt DeviceOptions, useFakeGpus bool) (SystemInfo, error) {
 	sysInfo := SystemInfo{}
 	gpuCount, err := dcgm.GetAllDeviceCount()
 	if err != nil {
@@ -158,7 +158,12 @@ func InitializeSystemInfo(dOpt DeviceOptions) (SystemInfo, error) {
 	for i := uint(0); i < sysInfo.GpuCount; i++ {
 		sysInfo.Gpus[i].DeviceInfo, err = dcgm.GetDeviceInfo(i)
 		if err != nil {
-			return sysInfo, err
+			if useFakeGpus {
+				sysInfo.Gpus[i].DeviceInfo.GPU = i
+				sysInfo.Gpus[i].DeviceInfo.UUID = fmt.Sprintf("fake%d", i)
+			} else {
+				return sysInfo, err
+			}
 		}
 	}
 
@@ -179,7 +184,7 @@ func InitializeSystemInfo(dOpt DeviceOptions) (SystemInfo, error) {
 		for i := uint(0); i < hierarchy.Count; i++ {
 			if hierarchy.EntityList[i].Parent.EntityGroupId == dcgm.FE_GPU {
 				// We are adding a GPU instance
-				gpuId := hierarchy.EntityList[i].Parent.EntityId
+				gpuId = hierarchy.EntityList[i].Parent.EntityId
 				entityId := hierarchy.EntityList[i].Entity.EntityId
 				instanceInfo := GpuInstanceInfo{
 					Info:        hierarchy.EntityList[i].Info,
@@ -245,11 +250,11 @@ func AddAllGpuInstances(sysInfo SystemInfo) []MonitoringInfo {
 	var monitoring []MonitoringInfo
 
 	for i := uint(0); i < sysInfo.GpuCount; i++ {
-		for _, instance := range sysInfo.Gpus[i].GpuInstances {
+		for j := 0; j < len(sysInfo.Gpus[i].GpuInstances); j++ {
 			mi := MonitoringInfo{
-				dcgm.GroupEntityPair{dcgm.FE_GPU_I, instance.EntityId},
+				dcgm.GroupEntityPair{dcgm.FE_GPU_I, sysInfo.Gpus[i].GpuInstances[j].EntityId},
 				sysInfo.Gpus[i].DeviceInfo,
-				&instance,
+				&sysInfo.Gpus[i].GpuInstances[j],
 			}
 			monitoring = append(monitoring, mi)
 		}
@@ -292,13 +297,14 @@ func GetMonitoredEntities(sysInfo SystemInfo) []MonitoringInfo {
 	var monitoring []MonitoringInfo
 
 	if sysInfo.dOpt.Flex == true {
-		monitoring = AddAllGpus(sysInfo)
 		if sysInfo.MigEnabled == true {
-			return append(monitoring, AddAllGpuInstances(sysInfo)...)
+			return AddAllGpuInstances(sysInfo)
+		} else {
+			return AddAllGpus(sysInfo)
 		}
 	} else {
 		if len(sysInfo.dOpt.GpuRange) > 0 && sysInfo.dOpt.GpuRange[0] == -1 {
-			monitoring = append(monitoring, AddAllGpus(sysInfo)...)
+			return AddAllGpus(sysInfo)
 		} else {
 			for _, gpuId := range sysInfo.dOpt.GpuRange {
 				// We've already verified that everying in the options list exists
@@ -307,7 +313,7 @@ func GetMonitoredEntities(sysInfo SystemInfo) []MonitoringInfo {
 		}
 
 		if len(sysInfo.dOpt.GpuInstanceRange) > 0 && sysInfo.dOpt.GpuInstanceRange[0] == -1 {
-			monitoring = append(monitoring, AddAllGpuInstances(sysInfo)...)
+			return AddAllGpuInstances(sysInfo)
 		} else {
 			for _, gpuInstanceId := range sysInfo.dOpt.GpuInstanceRange {
 				// We've already verified that everything in the options list exists
@@ -317,4 +323,15 @@ func GetMonitoredEntities(sysInfo SystemInfo) []MonitoringInfo {
 	}
 
 	return monitoring
+}
+
+func GetGpuInstanceIdentifier(sysInfo SystemInfo, gpuuuid string, gpuInstanceId string) string {
+	for i := uint(0); i < sysInfo.GpuCount; i++ {
+		if sysInfo.Gpus[i].DeviceInfo.UUID == gpuuuid {
+			identifier := fmt.Sprintf("%d-%s", sysInfo.Gpus[i].DeviceInfo.GPU, gpuInstanceId)
+			return identifier
+		}
+	}
+
+	return ""
 }
